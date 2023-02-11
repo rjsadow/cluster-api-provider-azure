@@ -581,94 +581,47 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 
 func (s *Service) getVirtualMachineScaleSetNetworkConfiguration(vmssSpec azure.ScaleSetSpec) *[]compute.VirtualMachineScaleSetNetworkConfiguration {
 	var backendAddressPools []compute.SubResource
-	// Use custom NIC definitions in VMSS if set
-	if len(vmssSpec.NetworkInterfaces) > 0 {
-		nicConfigs := []compute.VirtualMachineScaleSetNetworkConfiguration{}
-		for i, n := range vmssSpec.NetworkInterfaces {
-			nicConfig := compute.VirtualMachineScaleSetNetworkConfiguration{}
-			nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties = &compute.VirtualMachineScaleSetNetworkConfigurationProperties{}
-			nicConfig.Name = pointer.String(vmssSpec.Name + "-" + strconv.Itoa(i))
-			if pointer.BoolDeref(n.AcceleratedNetworking, false) {
-				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = pointer.Bool(true)
-			} else {
-				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = pointer.Bool(false)
-			}
-			if n.PrivateIPConfigs == 0 {
-				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.IPConfigurations = &[]compute.VirtualMachineScaleSetIPConfiguration{
-					{
-						Name: pointer.String(vmssSpec.Name + "-" + strconv.Itoa(i)),
-						VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
-							Subnet: &compute.APIEntityReference{
-								ID: pointer.String(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
-							},
-							Primary:                         pointer.Bool(true),
-							PrivateIPAddressVersion:         compute.IPVersionIPv4,
-							LoadBalancerBackendAddressPools: &backendAddressPools,
-						},
-					},
-				}
-			} else {
-				ipconfigs := []compute.VirtualMachineScaleSetIPConfiguration{}
+	nicConfigs := []compute.VirtualMachineScaleSetNetworkConfiguration{}
+	for i, n := range vmssSpec.NetworkInterfaces {
+		nicConfig := compute.VirtualMachineScaleSetNetworkConfiguration{}
+		nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties = &compute.VirtualMachineScaleSetNetworkConfigurationProperties{}
+		nicConfig.Name = pointer.String(vmssSpec.Name + "-" + strconv.Itoa(i))
+		if pointer.BoolDeref(n.AcceleratedNetworking, false) {
+			nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = pointer.Bool(true)
+		} else {
+			nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.EnableAcceleratedNetworking = pointer.Bool(false)
+		}
 
-				// Create IPConfigs
-				for j := 0; j < n.PrivateIPConfigs; j++ {
-					ipconfig := compute.VirtualMachineScaleSetIPConfiguration{
-						Name: pointer.String(fmt.Sprintf("private-ipConfig-%v", j)),
-						VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
-							PrivateIPAddressVersion: compute.IPVersionIPv4,
-							Subnet: &compute.APIEntityReference{
-								ID: pointer.String(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
-							},
-						},
-					}
-
-					ipconfig.Subnet = &compute.APIEntityReference{
+		// Create IPConfigs
+		ipconfigs := []compute.VirtualMachineScaleSetIPConfiguration{}
+		for j := 0; j < n.PrivateIPConfigs; j++ {
+			ipconfig := compute.VirtualMachineScaleSetIPConfiguration{
+				Name: pointer.String(fmt.Sprintf("private-ipConfig-%v", j)),
+				VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
+					PrivateIPAddressVersion: compute.IPVersionIPv4,
+					Subnet: &compute.APIEntityReference{
 						ID: pointer.String(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
-					}
-					ipconfigs = append(ipconfigs, ipconfig)
-				}
-				if i == 0 {
-					ipconfigs[0].LoadBalancerBackendAddressPools = &backendAddressPools
-				}
-				// Always use the first IPConfig as the Primary
-				ipconfigs[0].Primary = pointer.Bool(true)
-				nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.IPConfigurations = &ipconfigs
-			}
-			nicConfigs = append(nicConfigs, nicConfig)
-		}
-		nicConfigs[0].VirtualMachineScaleSetNetworkConfigurationProperties.Primary = pointer.Bool(true)
-		return &nicConfigs
-	} else {
-		if vmssSpec.PublicLBName != "" {
-			if vmssSpec.PublicLBAddressPoolName != "" {
-				backendAddressPools = append(backendAddressPools,
-					compute.SubResource{
-						ID: pointer.String(azure.AddressPoolID(s.Scope.SubscriptionID(), s.Scope.ResourceGroup(), vmssSpec.PublicLBName, vmssSpec.PublicLBAddressPoolName)),
-					})
-			}
-		}
-		return &[]compute.VirtualMachineScaleSetNetworkConfiguration{{
-			Name: pointer.String(vmssSpec.Name),
-			VirtualMachineScaleSetNetworkConfigurationProperties: &compute.VirtualMachineScaleSetNetworkConfigurationProperties{
-				Primary:            pointer.Bool(true),
-				EnableIPForwarding: pointer.Bool(true),
-				IPConfigurations: &[]compute.VirtualMachineScaleSetIPConfiguration{
-					{
-						Name: pointer.String(vmssSpec.Name),
-						VirtualMachineScaleSetIPConfigurationProperties: &compute.VirtualMachineScaleSetIPConfigurationProperties{
-							Subnet: &compute.APIEntityReference{
-								ID: pointer.String(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, vmssSpec.SubnetName)),
-							},
-							Primary:                         pointer.Bool(true),
-							PrivateIPAddressVersion:         compute.IPVersionIPv4,
-							LoadBalancerBackendAddressPools: &backendAddressPools,
-						},
 					},
 				},
-				EnableAcceleratedNetworking: vmssSpec.AcceleratedNetworking,
-			},
-		}}
+			}
+
+			ipconfig.Subnet = &compute.APIEntityReference{
+				ID: pointer.String(azure.SubnetID(s.Scope.SubscriptionID(), vmssSpec.VNetResourceGroup, vmssSpec.VNetName, n.SubnetName)),
+			}
+			if j == 0 {
+				// Always use the first IPConfig as the Primary
+				ipconfig.Primary = pointer.Bool(true)
+			}
+			ipconfigs = append(ipconfigs, ipconfig)
+		}
+		if i == 0 {
+			ipconfigs[0].LoadBalancerBackendAddressPools = &backendAddressPools
+			nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.Primary = pointer.Bool(true)
+		}
+		nicConfig.VirtualMachineScaleSetNetworkConfigurationProperties.IPConfigurations = &ipconfigs
+		nicConfigs = append(nicConfigs, nicConfig)
 	}
+	return &nicConfigs
 }
 
 // getVirtualMachineScaleSet provides information about a Virtual Machine Scale Set and its instances.
