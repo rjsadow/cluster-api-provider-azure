@@ -498,7 +498,8 @@ func (s *Service) buildVMSSFromSpec(ctx context.Context, vmssSpec azure.ScaleSet
 				SecurityProfile:    securityProfile,
 				DiagnosticsProfile: diagnosticsProfile,
 				NetworkProfile: &compute.VirtualMachineScaleSetNetworkProfile{
-					NetworkInterfaceConfigurations: getVirtualMachineScaleSetNetworkConfiguration(vmssSpec),
+					NetworkInterfaceConfigurations: s.getVirtualMachineScaleSetNetworkConfiguration(vmssSpec),
+				},
 				Priority:       priority,
 				EvictionPolicy: evictionPolicy,
 				BillingProfile: billingProfile,
